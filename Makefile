@@ -42,11 +42,12 @@ $(TARGET_LIB): $(OBJS)
 clean:
 	$(RM) $(TARGET_LIB) $(OBJS)
 
+# ZWO AM mounts are native USB CDC-ACM devices (ttyACM*), not USB-serial adapters.
+# 03c3:4001 observed on an AM5. Do not match ATTRS{serial}: it is the placeholder 123456.
 udev-install:
 	@echo "Installing udev rule for ZWO AM Mount..."
-	@echo 'SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", SYMLINK+="ttyZWO-AM-Mount", MODE="0666"' | sudo tee /etc/udev/rules.d/99-zwo-am-mount.rules > /dev/null
-	@echo 'SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", SYMLINK+="ttyZWO-AM-Mount", MODE="0666"' | sudo tee -a /etc/udev/rules.d/99-zwo-am-mount.rules > /dev/null
+	@echo 'SUBSYSTEM=="tty", ATTRS{idVendor}=="03c3", ATTRS{idProduct}=="4001", SYMLINK+="ttyZWO-AM-Mount"' | sudo tee /etc/udev/rules.d/99-zwo-am-mount.rules > /dev/null
 	@sudo udevadm control --reload-rules
-	@sudo udevadm trigger
-	@echo "udev rules installed to /etc/udev/rules.d/99-zwo-am-mount.rules and reloaded."
-	@echo "Note: If your mount does not show up as /dev/ttyZWO-AM-Mount, update the idVendor and idProduct in the rule file using lsusb."
+	@sudo udevadm trigger --subsystem-match=tty
+	@echo "udev rule installed to /etc/udev/rules.d/99-zwo-am-mount.rules and reloaded."
+	@echo "Note: If your mount does not show up as /dev/ttyZWO-AM-Mount, check its IDs with: udevadm info -a -n /dev/ttyACM0"
