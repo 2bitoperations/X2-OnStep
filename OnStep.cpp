@@ -37,18 +37,7 @@ int OnStep::Connect(std::string sPort)
 	m_sPort.assign(sPort);
 	m_bIsConnected = false;
 
-	if (!m_pSerx->isConnected()) {
-		nErr = m_pSerx->open(m_sPort.c_str(), m_nPortSpeed, SerXInterface::B_NOPARITY);
-		if(nErr == 0) {
-			m_bIsConnected = true;
-		}
-		else
-			m_bIsConnected = false;
-	}
-	else
-		m_bIsConnected = true;
-
-	if(!m_bIsConnected)
+	if(openSerialPort())
 		return ERR_COMMNOLINK;
 
 	if(m_bSyncLocationDataConnect) {
@@ -60,20 +49,18 @@ int OnStep::Connect(std::string sPort)
 			m_sLogFile << "["<<getTimeStamp()<<"]"<< " [" << __func__ << "] error " << nErr << ", response = " << sResp << std::endl;
 			m_sLogFile.flush();
 	}
-			m_bIsConnected = false;
+			closeSerialPort();
 			return nErr;
 		}
 	}
 	nErr = isHomingDone(m_bIsAtHome);
 	if(nErr) {
-		if(nErr == ERR_TXTIMEOUT)
-			m_bIsConnected = false;
 	if(m_nDebugLevel >= 1) {
 		m_sLogFile << "["<<getTimeStamp()<<"]"<< " [" << __func__ << "] error calling isHomingDone :" << nErr << ", response = " << sResp << std::endl;
 		m_sLogFile.flush();
 	}
-		m_bIsConnected = false;
-
+		closeSerialPort();
+		return nErr;
 	}
 	setSlewRate(m_nGoToSlewRate);
 	// unPark();
@@ -91,22 +78,59 @@ int OnStep::Disconnect(void)
 	m_sLogFile << "["<<getTimeStamp()<<"]"<< " [" << __func__ << "] Disconnect Called." << std::endl;
 	m_sLogFile.flush();
 	}
-	if (m_bIsConnected) {
-		if(m_bStopTrackingOnDisconnect)
-			setTrackingRates( false, true, 0.0, 0.0); // stop tracking on disconnect.
-		if(m_pSerx){
-	if(m_nDebugLevel >= 2) {
-			m_sLogFile << "["<<getTimeStamp()<<"]"<< " [" << __func__ << "] closing serial port." << std::endl;
-			m_sLogFile.flush();
-	}
-			m_pSerx->flushTx();
-			m_pSerx->purgeTxRx();
-			m_pSerx->close();
-		}
-	}
-	m_bIsConnected = false;
+	if (m_bIsConnected && m_bStopTrackingOnDisconnect)
+		setTrackingRates( false, true, 0.0, 0.0); // stop tracking on disconnect.
+
+	// Close even if m_bIsConnected is already false: a comm error clears it while the
+	// port is still open, and TheSkyX keeps that handle alive for the next Connect.
+	closeSerialPort();
 
 	return SB_OK;
+}
+
+int OnStep::openSerialPort()
+{
+	if(m_nDebugLevel >= 2) {
+		m_sLogFile << "["<<getTimeStamp()<<"]"<< " [" << __func__ << "] Called. port=" << m_sPort << " speed=" << m_nPortSpeed << std::endl;
+		m_sLogFile.flush();
+	}
+
+	// TheSkyX's serial object outlives a failed connection. If it is still open it may
+	// point at a different port or a USB device that has since gone away, so writes
+	// fail with EIO (error 5) however healthy the mount is on m_sPort. Never reuse it.
+	if(m_pSerx->isConnected()) {
+		if(m_nDebugLevel >= 2) {
+			m_sLogFile << "["<<getTimeStamp()<<"]"<< " [" << __func__ << "] serial port was already open, closing it first" << std::endl;
+			m_sLogFile.flush();
+		}
+		m_pSerx->close();
+	}
+
+	int nErr = m_pSerx->open(m_sPort.c_str(), m_nPortSpeed, SerXInterface::B_NOPARITY);
+	if(nErr && m_nDebugLevel >= 1) {
+		m_sLogFile << "["<<getTimeStamp()<<"]"<< " [" << __func__ << "] open error " << nErr << std::endl;
+		m_sLogFile.flush();
+	}
+	m_bIsConnected = (nErr == 0);
+	if(m_nDebugLevel >= 2) {
+		m_sLogFile << "["<<getTimeStamp()<<"]"<< " [" << __func__ << "] m_bIsConnected: -> " << (m_bIsConnected?"Yes":"No") << std::endl;
+		m_sLogFile.flush();
+	}
+	return nErr;
+}
+
+void OnStep::closeSerialPort()
+{
+	if(m_nDebugLevel >= 2) {
+		m_sLogFile << "["<<getTimeStamp()<<"]"<< " [" << __func__ << "] Called." << std::endl;
+		m_sLogFile.flush();
+	}
+	if(m_pSerx && m_pSerx->isConnected()) {
+		m_pSerx->flushTx();
+		m_pSerx->purgeTxRx();
+		m_pSerx->close();
+	}
+	m_bIsConnected = false;
 }
 
 void OnStep::Reconnect(int nNewPortSpeed)

@@ -143,6 +143,11 @@ public:
 	void setDebugLevel(int nLevel);
 	void log(std::string sLogEntry);
 protected:
+	// Always opens m_sPort, discarding any handle left over from an earlier session.
+	int     openSerialPort();
+	// Closes the port and clears m_bIsConnected. Safe to call when already closed.
+	void    closeSerialPort();
+
 
 	SerXInterface                       *m_pSerx;
 	TheSkyXFacadeForDriversInterface    *m_pTsx;

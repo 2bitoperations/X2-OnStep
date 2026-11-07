@@ -14,22 +14,7 @@ int ZWOMount::Connect(std::string sPort)
 	m_sPort.assign(sPort);
 	m_bIsConnected = false;
 
-	if (!m_pSerx->isConnected()) {
-		nErr = m_pSerx->open(m_sPort.c_str(), m_nPortSpeed, SerXInterface::B_NOPARITY);
-		if(nErr == 0)
-			m_bIsConnected = true;
-		else
-			m_bIsConnected = false;
-	}
-	else
-		m_bIsConnected = true;
-
-	if(m_nDebugLevel >= 2) {
-		m_sLogFile << "["<<getTimeStamp()<<"]"<< " [" << __func__ << "] m_bIsConnected: -> " << (m_bIsConnected?"Yes":"No") << std::endl;
-		m_sLogFile.flush();
-	}
-
-	if(!m_bIsConnected)
+	if(openSerialPort())
 		return ERR_COMMNOLINK;
 
 	{
@@ -82,6 +67,14 @@ int ZWOMount::Connect(std::string sPort)
 			m_sLogFile << "["<<getTimeStamp()<<"]"<< " [" << __func__ << "] SMGE response : '" << sResp << "' (nErr=" << nErr << ")" << std::endl;
 			m_sLogFile.flush();
 		}
+		if(nErr) {
+			if(m_nDebugLevel >= 1) {
+				m_sLogFile << "["<<getTimeStamp()<<"]"<< " [" << __func__ << "] SMGE error " << nErr << std::endl;
+				m_sLogFile.flush();
+			}
+			closeSerialPort();
+			return nErr;
+		}
 
 		yy = yy - (int(yy / 1000) * 1000);
 		int nSec = (int)sec;
@@ -104,7 +97,7 @@ int ZWOMount::Connect(std::string sPort)
 			m_sLogFile.flush();
 		}
 
-		nErr |= sendCommand(ssCmd.str(), sResp, MAX_TIMEOUT, SHORT_RESPONSE, 1);
+		nErr = sendCommand(ssCmd.str(), sResp, MAX_TIMEOUT, SHORT_RESPONSE, 1);
 		if(nErr == COMMAND_TIMEOUT)
 			nErr = PLUGIN_OK;
 		if(m_nDebugLevel >= 2) {
@@ -114,10 +107,10 @@ int ZWOMount::Connect(std::string sPort)
 
 		if(nErr) {
 			if(m_nDebugLevel >= 1) {
-				m_sLogFile << "["<<getTimeStamp()<<"]"<< " [" << __func__ << "] Site/time sync error " << nErr << std::endl;
+				m_sLogFile << "["<<getTimeStamp()<<"]"<< " [" << __func__ << "] SMTI error " << nErr << std::endl;
 				m_sLogFile.flush();
 			}
-			m_bIsConnected = false;
+			closeSerialPort();
 			return nErr;
 		}
 	}
@@ -125,13 +118,11 @@ int ZWOMount::Connect(std::string sPort)
 	// Query current homing state without moving the mount.
 	nErr = isHomingDone(m_bIsAtHome);
 	if(nErr) {
-		if(nErr == ERR_TXTIMEOUT)
-			m_bIsConnected = false;
 		if(m_nDebugLevel >= 1) {
 			m_sLogFile << "["<<getTimeStamp()<<"]"<< " [" << __func__ << "] isHomingDone error : " << nErr << std::endl;
 			m_sLogFile.flush();
 		}
-		m_bIsConnected = false;
+		closeSerialPort();
 		return nErr;
 	}
 	if(m_bIsAtHome && !m_bHasBeenHomed) {
